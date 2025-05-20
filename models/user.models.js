@@ -50,11 +50,6 @@ const userSchema = new mongoose.Schema(
                 return ['student', 'teacher'].includes(this.role);
             },
         },
-
-        designation: {
-            type: String,
-            default: '',
-        },
     },
     {
         timestamps: true,

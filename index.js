@@ -87,3 +87,5 @@ const bootstrap = async () => {
 
 // Start the application
 bootstrap();
+
+// https://claude.ai/chat/34273b02-152c-4c09-a22f-ef39435a145b

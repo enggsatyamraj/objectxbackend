@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
 import generateToken from '../utils/generateToken.js';
 import logger from '../utils/logger.js';
+import mongoose from 'mongoose';
+import School from '../models/school.models.js';
 
 // POST /signup
 export const registerUser = async (req, res) => {
@@ -11,7 +13,6 @@ export const registerUser = async (req, res) => {
 
     try {
         // Extract validated data from request body
-        // The zodValidator middleware has already validated and parsed the data
         const { name, email, password, role, school } = req.body.user;
 
         const existingUser = await User.findOne({ email });
@@ -23,15 +24,61 @@ export const registerUser = async (req, res) => {
             });
         }
 
+        // If role is student or teacher, validate school
+        if ((role === 'student' || role === 'teacher') && !school) {
+            logger.warn('[AUTH] Registration failed: School required for student/teacher', { role });
+            return res.status(400).json({
+                success: false,
+                message: `School is required for ${role} registration`
+            });
+        }
+
+        // If school is provided, validate it exists
+        let schoolExists = null;
+        if (school) {
+            // Check if school ID is valid
+            if (!mongoose.Types.ObjectId.isValid(school)) {
+                logger.warn('[AUTH] Registration failed: Invalid school ID format', { school });
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid school ID format'
+                });
+            }
+
+            // Check if school exists
+            schoolExists = await School.findById(school);
+            if (!schoolExists) {
+                logger.warn('[AUTH] Registration failed: School not found', { school });
+                return res.status(400).json({
+                    success: false,
+                    message: 'School not found'
+                });
+            }
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Create user
         const user = await User.create({
             name,
             email,
             password: hashedPassword,
             role,
-            school,
+            school: schoolExists ? schoolExists._id : undefined,
         });
+
+        // Update School model if role is student or teacher
+        if (schoolExists) {
+            if (role === 'student') {
+                schoolExists.students.push(user._id);
+                await schoolExists.save();
+                logger.info(`[AUTH] Student added to school: ${schoolExists._id}`);
+            } else if (role === 'teacher') {
+                schoolExists.teachers.push(user._id);
+                await schoolExists.save();
+                logger.info(`[AUTH] Teacher added to school: ${schoolExists._id}`);
+            }
+        }
 
         const token = generateToken(user);
 
@@ -40,7 +87,8 @@ export const registerUser = async (req, res) => {
         logger.info(`[AUTH] User registered successfully (${processingTime}ms)`, {
             userId: user._id,
             role: user.role,
-            email: user.email
+            email: user.email,
+            school: user.school ? user.school.toString() : 'none'
         });
 
         // Send successful response

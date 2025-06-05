@@ -8,10 +8,18 @@
     "start:dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "education",
+    "objectx",
+    "vr",
+    "backend"
+  ],
+  "author": "ObjectX Team",
   "license": "ISC",
-  "description": "",
+  "description": "ObjectX Innovatech Backend - Education Management System with VR Integration",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",

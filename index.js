@@ -5,12 +5,14 @@ import logger from './utils/logger.js';
 import authRouter from './routes/auth.routes.js';
 import schoolRouter from './routes/school.routes.js';
 import classRouter from './routes/class.routes.js';
+import cors from 'cors'
 
 // Load environment variables
 dotenv.config();
 
 // Initialize Express app
 const app = express();
+app.use(cors());
 const PORT = process.env.PORT || 3000;
 
 // Middleware

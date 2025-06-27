@@ -6,7 +6,17 @@
   "scripts": {
     "start": "node index.js",
     "start:dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:superadmin": "node seeders/superAdminSeeder.js",
+    "seed:superadmin:create": "node seeders/superAdminSeeder.js create",
+    "seed:superadmin:list": "node seeders/superAdminSeeder.js list",
+    "seed:superadmin:remove": "node seeders/superAdminSeeder.js remove",
+    "db:seed": "node seeders/superAdminSeeder.js create",
+    "db:clean": "node seeders/databaseCleaner.js clean",
+    "db:clean:force": "node seeders/databaseCleaner.js clean:force",
+    "db:clean:drop": "node seeders/databaseCleaner.js clean:drop",
+    "db:stats": "node seeders/databaseCleaner.js stats",
+    "db:reset": "npm run db:clean && npm run db:seed"
   },
   "keywords": [
     "education",

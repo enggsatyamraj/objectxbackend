@@ -1,10 +1,11 @@
+// File: controllers/auth.controller.js
+
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import User from '../models/user.models.js';
+import User from '../models/user.model.js';
+import Organization from '../models/organization.model.js';
 import generateToken from '../utils/generateToken.js';
 import logger from '../utils/logger.js';
-import mongoose from 'mongoose';
-import School from '../models/school.models.js';
 import { generateOTP, canRequestNewOTP, getOTPCooldownTime } from '../utils/otp.js';
 import {
     sendOTPEmail,
@@ -13,15 +14,29 @@ import {
     sendPasswordChangedEmail
 } from '../utils/emailService.js';
 
-// POST /signup
+// POST /signup - Only for SuperAdmin and SpecialUser
 export const registerUser = async (req, res) => {
     const startTime = Date.now();
     logger.info('[AUTH] Starting user registration process');
 
     try {
         // Extract validated data from request body
-        const { name, email, password, role, school } = req.body.user;
+        const { name, email, password, role } = req.body;
 
+        // Validate allowed roles for public registration
+        if (!['superAdmin', 'specialUser'].includes(role)) {
+            logger.warn('[AUTH] Registration failed: Invalid role for public registration', {
+                email,
+                role,
+                message: 'Only superAdmin and specialUser can register publicly'
+            });
+            return res.status(400).json({
+                success: false,
+                message: 'Students, teachers, and admins must be enrolled by organization admins'
+            });
+        }
+
+        // Check if user already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             // If user exists but not verified, allow OTP resend
@@ -66,38 +81,7 @@ export const registerUser = async (req, res) => {
             });
         }
 
-        // If role is student or teacher, validate school
-        if ((role === 'student' || role === 'teacher') && !school) {
-            logger.warn('[AUTH] Registration failed: School required for student/teacher', { role });
-            return res.status(400).json({
-                success: false,
-                message: `School is required for ${role} registration`
-            });
-        }
-
-        // If school is provided, validate it exists
-        let schoolExists = null;
-        if (school) {
-            // Check if school ID is valid
-            if (!mongoose.Types.ObjectId.isValid(school)) {
-                logger.warn('[AUTH] Registration failed: Invalid school ID format', { school });
-                return res.status(400).json({
-                    success: false,
-                    message: 'Invalid school ID format'
-                });
-            }
-
-            // Check if school exists
-            schoolExists = await School.findById(school);
-            if (!schoolExists) {
-                logger.warn('[AUTH] Registration failed: School not found', { school });
-                return res.status(400).json({
-                    success: false,
-                    message: 'School not found'
-                });
-            }
-        }
-
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Generate OTP for email verification
@@ -109,8 +93,12 @@ export const registerUser = async (req, res) => {
             email,
             password: hashedPassword,
             role,
-            school: schoolExists ? schoolExists._id : undefined,
-            isVerified: false
+            isVerified: false,
+            // No organization for superAdmin and specialUser
+            organization: undefined,
+            section: undefined,
+            teachingSections: [],
+            managingOrganizations: []
         });
 
         // Set OTP for email verification
@@ -129,8 +117,7 @@ export const registerUser = async (req, res) => {
         logger.info(`[AUTH] User registered successfully - verification pending (${processingTime}ms)`, {
             userId: user._id,
             role: user.role,
-            email: user.email,
-            school: user.school ? user.school.toString() : 'none'
+            email: user.email
         });
 
         // Send successful response (no token until verified)
@@ -179,7 +166,7 @@ export const registerUser = async (req, res) => {
     }
 };
 
-// POST /verify-email
+// POST /verify-email - Updated for new structure
 export const verifyEmail = async (req, res) => {
     const startTime = Date.now();
     logger.info('[AUTH] Processing email verification');
@@ -223,23 +210,6 @@ export const verifyEmail = async (req, res) => {
         // Mark user as verified and clear OTP
         user.isVerified = true;
         user.clearOTP();
-
-        // Add user to school if applicable
-        if (user.school) {
-            const school = await School.findById(user.school);
-            if (school) {
-                if (user.role === 'student') {
-                    school.students.push(user._id);
-                    await school.save();
-                    logger.info(`[AUTH] Student added to school: ${school._id}`);
-                } else if (user.role === 'teacher') {
-                    school.teachers.push(user._id);
-                    await school.save();
-                    logger.info(`[AUTH] Teacher added to school: ${school._id}`);
-                }
-            }
-        }
-
         await user.save();
 
         // Send welcome email
@@ -264,7 +234,8 @@ export const verifyEmail = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: user.school,
+                organization: user.organization,
+                section: user.section,
                 isVerified: user.isVerified
             }
         });
@@ -275,6 +246,90 @@ export const verifyEmail = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Server error during email verification',
+            error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+        });
+    }
+};
+
+// POST /login - Updated for new structure
+export const loginUser = async (req, res) => {
+    const startTime = Date.now();
+    logger.info('[AUTH] Processing login request');
+
+    try {
+        // Extract validated data from request body
+        const { email, password } = req.body;
+
+        const user = await User.findOne({ email })
+            .populate('organization')
+            .populate('section');
+
+        if (!user) {
+            logger.warn('[AUTH] Login failed: User not found', { email });
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Check if email is verified
+        if (!user.isVerified) {
+            logger.warn('[AUTH] Login failed: Email not verified', { userId: user._id });
+            return res.status(401).json({
+                success: false,
+                message: 'Please verify your email before logging in',
+                requiresVerification: true,
+                email: user.email
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            logger.warn('[AUTH] Login failed: Invalid password', {
+                userId: user._id,
+                email: user.email
+            });
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Update last login
+        await user.updateLastLogin();
+
+        const token = generateToken(user);
+
+        // Calculate processing time
+        const processingTime = Date.now() - startTime;
+        logger.info(`[AUTH] User authenticated successfully (${processingTime}ms)`, {
+            userId: user._id,
+            role: user.role
+        });
+
+        // Send successful response
+        return res.status(200).json({
+            success: true,
+            token,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                organization: user.organization,
+                section: user.section,
+                isVerified: user.isVerified
+            },
+        });
+    } catch (error) {
+        // Calculate processing time even for errors
+        const processingTime = Date.now() - startTime;
+
+        logger.error(`[AUTH] Login failed (${processingTime}ms):`, error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Server error during login',
             error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
         });
     }
@@ -485,93 +540,17 @@ export const resetPassword = async (req, res) => {
     }
 };
 
-// POST /login
-export const loginUser = async (req, res) => {
-    const startTime = Date.now();
-    logger.info('[AUTH] Processing login request');
-
-    try {
-        // Extract validated data from request body
-        const { email, password } = req.body.user;
-
-        const user = await User.findOne({ email }).populate('school');
-        if (!user) {
-            logger.warn('[AUTH] Login failed: User not found', { email });
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
-        }
-
-        // Check if email is verified
-        if (!user.isVerified) {
-            logger.warn('[AUTH] Login failed: Email not verified', { userId: user._id });
-            return res.status(401).json({
-                success: false,
-                message: 'Please verify your email before logging in',
-                requiresVerification: true,
-                email: user.email
-            });
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            logger.warn('[AUTH] Login failed: Invalid password', {
-                userId: user._id,
-                email: user.email
-            });
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
-        }
-
-        const token = generateToken(user);
-
-        // Calculate processing time
-        const processingTime = Date.now() - startTime;
-        logger.info(`[AUTH] User authenticated successfully (${processingTime}ms)`, {
-            userId: user._id,
-            role: user.role
-        });
-
-        // Send successful response
-        return res.status(200).json({
-            success: true,
-            token,
-            user: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                school: user.school,
-                isVerified: user.isVerified
-            },
-        });
-    } catch (error) {
-        // Calculate processing time even for errors
-        const processingTime = Date.now() - startTime;
-
-        logger.error(`[AUTH] Login failed (${processingTime}ms):`, error);
-
-        return res.status(500).json({
-            success: false,
-            message: 'Server error during login',
-            error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
-    }
-};
-
-// GET /me
+// GET /me - Updated to return organization and section data
 export const getMe = async (req, res) => {
     const startTime = Date.now();
     logger.info('[AUTH] Retrieving user profile', { userId: req.user._id });
 
     try {
         // Find user by ID (from auth middleware)
-        logger.debug('[AUTH] Finding user details in database');
         const user = await User.findById(req.user._id)
-            .populate('school')
+            .populate('organization')
+            .populate('section')
+            .populate('teachingSections')
             .select('-password -otp');
 
         // Check if user exists
@@ -599,10 +578,15 @@ export const getMe = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: user.school,
+                organization: user.organization,
+                section: user.section,
+                teachingSections: user.teachingSections,
                 avatar: user.avatar,
                 bio: user.bio,
                 isVerified: user.isVerified,
+                preferences: user.preferences,
+                studentDetails: user.studentDetails,
+                teacherDetails: user.teacherDetails,
                 createdAt: user.createdAt,
             },
         });
@@ -620,17 +604,16 @@ export const getMe = async (req, res) => {
     }
 };
 
-// PUT /me
+// PUT /me - Profile update (keeping existing functionality)
 export const updateProfile = async (req, res) => {
     const startTime = Date.now();
     logger.info('[AUTH] Processing profile update request', { userId: req.user._id });
 
     try {
         // Extract validated data
-        const { name, avatar, bio } = req.body.user;
+        const { name, avatar, bio } = req.body;
 
         // Find user by ID
-        logger.debug('[AUTH] Finding user for update');
         const user = await User.findById(req.user._id);
 
         // Check if user exists
@@ -648,7 +631,6 @@ export const updateProfile = async (req, res) => {
         if (bio) user.bio = bio;
 
         // Save updated user
-        logger.debug('[AUTH] Saving updated user profile');
         await user.save();
 
         // Calculate processing time
@@ -693,17 +675,16 @@ export const updateProfile = async (req, res) => {
     }
 };
 
-// PUT /password
+// PUT /password - Password change (keeping existing functionality)
 export const changePassword = async (req, res) => {
     const startTime = Date.now();
     logger.info('[AUTH] Processing password change request', { userId: req.user._id });
 
     try {
         // Extract validated data
-        const { currentPassword, newPassword } = req.body.passwords;
+        const { currentPassword, newPassword } = req.body;
 
         // Find user with password
-        logger.debug('[AUTH] Finding user with password for verification');
         const user = await User.findById(req.user._id);
 
         // Verify current password
@@ -720,7 +701,6 @@ export const changePassword = async (req, res) => {
         }
 
         // Hash new password
-        logger.debug('[AUTH] Hashing new password');
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
         // Update password

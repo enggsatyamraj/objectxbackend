@@ -3,7 +3,14 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import authRouter from './routes/auth.routes.js';
+import organizationRouter from './routes/organization.routes.js';
 import cors from 'cors'
+import User from './models/user.model.js';
+import Organization from './models/organization.model.js';
+import Class from './models/class.model.js';
+import Section from './models/section.model.js';
+import Content from './models/content.model.js';
+import APIKey from './models/apikey.model.js';
 
 // Load environment variables
 dotenv.config();
@@ -39,8 +46,7 @@ const connectDB = async () => {
 
 // Routes
 app.use('/api/v1/auth', authRouter);
-// app.use('/api/v1/schools', schoolRouter);
-// app.use('/api/v1/classes', classRouter);
+app.use('/api/v1/organizations', organizationRouter);
 
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the ObjectX API' });

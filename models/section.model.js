@@ -1,3 +1,5 @@
+// File: models/section.model.js (Updated)
+
 import mongoose from "mongoose";
 
 const sectionSchema = new mongoose.Schema(
@@ -24,25 +26,20 @@ const sectionSchema = new mongoose.Schema(
             required: [true, 'Organization reference is required'],
         },
 
-        // Section teacher - responsible for this specific section
+        // Section teacher - now optional, can be assigned later
         sectionTeacher: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: [true, 'Section teacher is required'],
+            default: null, // Allow null initially
+            required: false // Make it optional
         },
 
-        // Students in this section (max 30)
+        // Students in this section
         students: [
             {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'User',
-                validate: {
-                    validator: function (students) {
-                        return students.length <= 30;
-                    },
-                    message: 'Section cannot have more than 30 students'
-                }
-            },
+                ref: 'User'
+            }
         ],
 
         // Section capacity
@@ -83,7 +80,9 @@ const sectionSchema = new mongoose.Schema(
             },
             availableSeats: {
                 type: Number,
-                default: 30,
+                default: function () {
+                    return this.maxStudents || 30;
+                }
             },
             lastUpdated: {
                 type: Date,
@@ -137,9 +136,14 @@ sectionSchema.virtual('currentStudentCount').get(function () {
     return this.students.length;
 });
 
-// Pre-save middleware to validate section teacher
+// Virtual to check if section has teacher
+sectionSchema.virtual('hasTeacher').get(function () {
+    return !!this.sectionTeacher;
+});
+
+// Pre-save middleware to validate section teacher (only if provided)
 sectionSchema.pre('save', async function (next) {
-    if (this.isModified('sectionTeacher')) {
+    if (this.isModified('sectionTeacher') && this.sectionTeacher) {
         const User = mongoose.model('User');
         const teacher = await User.findById(this.sectionTeacher);
 
@@ -158,27 +162,30 @@ sectionSchema.pre('save', async function (next) {
     next();
 });
 
-// Pre-save middleware to validate students
+// Pre-save middleware to validate students and capacity
 sectionSchema.pre('save', async function (next) {
-    if (this.isModified('students') && this.students.length > 0) {
-        const User = mongoose.model('User');
-        const students = await User.find({
-            _id: { $in: this.students },
-            role: 'student',
-            organization: this.organization,
-            isDeleted: false
-        });
-
-        if (students.length !== this.students.length) {
-            return next(new Error('All students must be valid student users from the same organization'));
-        }
-    }
-    next();
-});
-
-// Pre-save middleware to update stats
-sectionSchema.pre('save', function (next) {
+    // Validate student capacity
     if (this.isModified('students')) {
+        if (this.students.length > this.maxStudents) {
+            return next(new Error(`Section cannot have more than ${this.maxStudents} students. Current: ${this.students.length}`));
+        }
+
+        // Validate students if any exist
+        if (this.students.length > 0) {
+            const User = mongoose.model('User');
+            const students = await User.find({
+                _id: { $in: this.students },
+                role: 'student',
+                organization: this.organization,
+                isDeleted: false
+            });
+
+            if (students.length !== this.students.length) {
+                return next(new Error('All students must be valid student users from the same organization'));
+            }
+        }
+
+        // Update stats
         this.stats.currentStudentCount = this.students.length;
         this.stats.availableSeats = Math.max(0, this.maxStudents - this.students.length);
         this.stats.lastUpdated = new Date();
@@ -186,20 +193,65 @@ sectionSchema.pre('save', function (next) {
     next();
 });
 
+// Method to assign teacher to section
+sectionSchema.methods.assignTeacher = async function (teacherId) {
+    const User = mongoose.model('User');
+    const teacher = await User.findById(teacherId);
+
+    if (!teacher) {
+        throw new Error('Teacher not found');
+    }
+
+    if (teacher.role !== 'teacher') {
+        throw new Error('User is not a teacher');
+    }
+
+    if (teacher.organization.toString() !== this.organization.toString()) {
+        throw new Error('Teacher must belong to the same organization');
+    }
+
+    this.sectionTeacher = teacherId;
+    await this.save();
+
+    // Add section to teacher's teaching sections
+    await teacher.addTeachingSection(this._id);
+
+    return this;
+};
+
+// Method to remove teacher from section
+sectionSchema.methods.removeTeacher = async function () {
+    if (this.sectionTeacher) {
+        const User = mongoose.model('User');
+        const teacher = await User.findById(this.sectionTeacher);
+
+        if (teacher) {
+            await teacher.removeTeachingSection(this._id);
+        }
+
+        this.sectionTeacher = null;
+        await this.save();
+    }
+    return this;
+};
+
 // Method to add student to section
-sectionSchema.methods.addStudent = function (studentId) {
+sectionSchema.methods.addStudent = async function (studentId) {
     // Check if section is full
     if (this.students.length >= this.maxStudents) {
         throw new Error(`Section is full. Maximum ${this.maxStudents} students allowed.`);
     }
 
     // Check if student is already in section
-    if (this.students.includes(studentId)) {
+    if (this.students.some(id => id.toString() === studentId.toString())) {
         throw new Error('Student is already in this section');
     }
 
+    // Add student to the array
     this.students.push(studentId);
-    return this.save();
+
+    // Save the section
+    return await this.save();
 };
 
 // Method to remove student from section
@@ -228,7 +280,7 @@ sectionSchema.methods.getFullDetails = async function () {
 sectionSchema.methods.canUserAccess = function (userId, userRole) {
     if (userRole === 'superAdmin') return true;
     if (userRole === 'admin') return true;
-    if (userRole === 'teacher' && this.sectionTeacher.toString() === userId.toString()) return true;
+    if (userRole === 'teacher' && this.sectionTeacher && this.sectionTeacher.toString() === userId.toString()) return true;
     if (userRole === 'student' && this.students.includes(userId)) return true;
 
     return false;
@@ -271,6 +323,21 @@ sectionSchema.statics.findAvailable = function (organizationId = null) {
     }
 
     return this.aggregate(pipeline);
+};
+
+// Static method to find sections without teachers
+sectionSchema.statics.findWithoutTeachers = function (organizationId = null) {
+    const query = {
+        sectionTeacher: null,
+        isDeleted: false,
+        isActive: true
+    };
+
+    if (organizationId) {
+        query.organization = organizationId;
+    }
+
+    return this.find(query);
 };
 
 // Static method to find active sections

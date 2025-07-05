@@ -11,6 +11,7 @@ import Class from './models/class.model.js';
 import Section from './models/section.model.js';
 import Content from './models/content.model.js';
 import APIKey from './models/apikey.model.js';
+import adminRouter from './routes/admin.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -47,9 +48,16 @@ const connectDB = async () => {
 // Routes
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/organizations', organizationRouter);
+app.use('/api/v1/admin', adminRouter);
 
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the ObjectX API' });
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: "healthy"
+    })
 });
 
 // 404 handler

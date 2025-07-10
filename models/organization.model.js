@@ -106,9 +106,6 @@ const organizationSchema = new mongoose.Schema(
             },
         },
 
-        // Organization website
-        // Removed - now using websites array above
-
         // Organization status
         isActive: {
             type: Boolean,
@@ -121,44 +118,13 @@ const organizationSchema = new mongoose.Schema(
             default: false,
         },
 
-        // Multiple organization admins (users with admin role for this org)
+        // SIMPLIFIED: Just list of admin users (no roles, no permissions)
         admins: [
             {
                 user: {
                     type: mongoose.Schema.Types.ObjectId,
                     ref: 'User',
                     required: true,
-                },
-                role: {
-                    type: String,
-                    enum: ['primary_admin', 'secondary_admin'],
-                    default: 'secondary_admin',
-                },
-                permissions: {
-                    canEnrollStudents: {
-                        type: Boolean,
-                        default: true,
-                    },
-                    canEnrollTeachers: {
-                        type: Boolean,
-                        default: true,
-                    },
-                    canManageClasses: {
-                        type: Boolean,
-                        default: true,
-                    },
-                    canViewAnalytics: {
-                        type: Boolean,
-                        default: true,
-                    },
-                    canManageContent: {
-                        type: Boolean,
-                        default: false, // Only primary admin by default
-                    },
-                    canManageAdmins: {
-                        type: Boolean,
-                        default: false, // Only primary admin by default
-                    },
                 },
                 addedBy: {
                     type: mongoose.Schema.Types.ObjectId,
@@ -287,12 +253,6 @@ organizationSchema.virtual('fullAddress').get(function () {
     return `${addr.street ? addr.street + ', ' : ''}${addr.city}, ${addr.state}, ${addr.country} - ${addr.pincode}`;
 });
 
-// Virtual to check if subscription is expired
-// Removed - no subscription for MVP
-
-// Virtual to get subscription status
-// Removed - no subscription for MVP
-
 // Pre-save middleware to generate organization code if not provided
 organizationSchema.pre('save', function (next) {
     if (!this.organizationCode) {
@@ -304,71 +264,34 @@ organizationSchema.pre('save', function (next) {
     next();
 });
 
-// Method to add admin to organization
-organizationSchema.methods.addAdmin = function (userId, role = 'secondary_admin', permissions = {}, addedBy = null) {
+// SIMPLIFIED: Add admin to organization (no roles, no permissions)
+organizationSchema.methods.addAdmin = function (userId, addedBy = null) {
     // Check if user is already an admin
     const existingAdmin = this.admins.find(admin => admin.user.toString() === userId.toString());
     if (existingAdmin) {
         throw new Error('User is already an admin of this organization');
     }
 
-    // Default permissions based on role
-    const defaultPermissions = {
-        primary_admin: {
-            canEnrollStudents: true,
-            canEnrollTeachers: true,
-            canManageClasses: true,
-            canViewAnalytics: true,
-            canManageContent: true,
-            canManageAdmins: true,
-        },
-        secondary_admin: {
-            canEnrollStudents: true,
-            canEnrollTeachers: true,
-            canManageClasses: true,
-            canViewAnalytics: true,
-            canManageContent: false,
-            canManageAdmins: false,
-        }
-    };
-
     this.admins.push({
         user: userId,
-        role,
-        permissions: { ...defaultPermissions[role], ...permissions },
         addedBy,
     });
 
     return this.save();
 };
 
-// Method to remove admin from organization
+// SIMPLIFIED: Remove admin from organization
 organizationSchema.methods.removeAdmin = function (userId) {
     this.admins = this.admins.filter(admin => admin.user.toString() !== userId.toString());
     return this.save();
 };
 
-// Method to check if user is admin of this organization
+// SIMPLIFIED: Check if user is admin of this organization
 organizationSchema.methods.isAdmin = function (userId) {
     return this.admins.some(admin => admin.user.toString() === userId.toString());
 };
 
-// Method to get admin permissions
-organizationSchema.methods.getAdminPermissions = function (userId) {
-    const admin = this.admins.find(admin => admin.user.toString() === userId.toString());
-    return admin ? admin.permissions : null;
-};
-organizationSchema.methods.canAccessContent = function (subject, grade) {
-    const hasSubjectAccess = this.contentAccess.allowedSubjects.includes('all') ||
-        this.contentAccess.allowedSubjects.includes(subject);
-
-    const hasGradeAccess = this.contentAccess.allowedGrades.includes('all') ||
-        this.contentAccess.allowedGrades.includes(grade);
-
-    return hasSubjectAccess && hasGradeAccess && this.subscription.isActive && !this.isSubscriptionExpired;
-};
-
-// Method to update organization stats
+// SIMPLIFIED: Update organization stats (unchanged)
 organizationSchema.methods.updateStats = async function () {
     const User = mongoose.model('User');
     const Class = mongoose.model('Class');

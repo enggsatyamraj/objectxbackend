@@ -10,6 +10,9 @@ import {
     forgotPassword,
     resetPassword
 } from '../controllers/auth.controllers.js';
+import { updatePassword } from '../controllers/updatePassword.controller.js';
+import { protect } from '../middleware/auth.middleware.js';
+
 const authRouter = express.Router();
 
 // Public routes - Registration and Email Verification
@@ -28,5 +31,8 @@ authRouter.post('/reset-password', resetPassword);
 // authRouter.get('/me', getMe);
 // authRouter.put('/me', updateProfile);
 // authRouter.put('/password', changePassword);
+
+// update password
+authRouter.put('/update-password', protect, updatePassword);
 
 export default authRouter;

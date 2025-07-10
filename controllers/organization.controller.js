@@ -581,9 +581,9 @@ export const deleteOrganization = async (req, res) => {
 };
 
 // POST /organizations/:id/add-primary-admin - Add primary admin to organization (SuperAdmin only)
-export const addPrimaryAdminToOrganization = async (req, res) => {
+export const addAdminToOrganization = async (req, res) => {
     const startTime = Date.now();
-    logger.info('[ORG] Starting primary admin addition process', {
+    logger.info('[ORG] Starting admin addition process', {
         superAdminId: req.user._id,
         organizationId: req.params.id
     });
@@ -594,17 +594,17 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
 
         // Verify user is SuperAdmin
         if (req.user.role !== 'superAdmin') {
-            logger.warn('[ORG] Unauthorized primary admin addition attempt', { userId: req.user._id, role: req.user.role });
+            logger.warn('[ORG] Unauthorized admin addition attempt', { userId: req.user._id, role: req.user.role });
             return res.status(403).json({
                 success: false,
-                message: 'Only SuperAdmins can add primary admins to organizations'
+                message: 'Only SuperAdmins can add admins to organizations'
             });
         }
 
         // Find organization
         const organization = await Organization.findById(organizationId);
         if (!organization) {
-            logger.warn('[ORG] Primary admin addition failed: Organization not found', { organizationId });
+            logger.warn('[ORG] Admin addition failed: Organization not found', { organizationId });
             return res.status(404).json({
                 success: false,
                 message: 'Organization not found'
@@ -614,23 +614,10 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
         // Check if email already exists
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            logger.warn('[ORG] Primary admin addition failed: Email already exists', { email });
+            logger.warn('[ORG] Admin addition failed: Email already exists', { email });
             return res.status(400).json({
                 success: false,
                 message: 'A user with this email already exists'
-            });
-        }
-
-        // Check if organization already has a primary admin
-        const existingPrimaryAdmin = organization.admins.find(admin => admin.role === 'primary_admin');
-        if (existingPrimaryAdmin) {
-            logger.warn('[ORG] Primary admin addition failed: Organization already has primary admin', {
-                organizationId,
-                existingPrimaryAdminId: existingPrimaryAdmin.user
-            });
-            return res.status(400).json({
-                success: false,
-                message: 'Organization already has a primary admin'
             });
         }
 
@@ -649,15 +636,8 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
             managingOrganizations: [organizationId]
         });
 
-        // Add admin to organization as primary admin
-        await organization.addAdmin(admin._id, 'primary_admin', {
-            canEnrollStudents: true,
-            canEnrollTeachers: true,
-            canManageClasses: true,
-            canViewAnalytics: true,
-            canManageContent: true,
-            canManageAdmins: true
-        }, req.user._id);
+        // Add admin to organization (simplified - no roles or permissions)
+        await organization.addAdmin(admin._id, req.user._id);
 
         // Update organization stats
         await organization.updateStats();
@@ -671,16 +651,16 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
                 organization: organization.name,
                 email: admin.email,
                 password: generatedPassword,
-                adminRole: 'primary_admin'
+                adminRole: 'admin'
             }
         );
 
         if (!emailSent) {
-            logger.warn('[ORG] Failed to send primary admin credentials email', { adminId: admin._id });
+            logger.warn('[ORG] Failed to send admin credentials email', { adminId: admin._id });
         }
 
         const processingTime = Date.now() - startTime;
-        logger.info(`[ORG] Primary admin added successfully (${processingTime}ms)`, {
+        logger.info(`[ORG] Admin added successfully (${processingTime}ms)`, {
             adminId: admin._id,
             organizationId,
             superAdminId: req.user._id
@@ -688,12 +668,12 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
 
         return res.status(201).json({
             success: true,
-            message: 'Primary admin created and added to organization successfully! Login credentials have been sent to their email.',
+            message: 'Admin created and added to organization successfully! Login credentials have been sent to their email.',
             admin: {
                 _id: admin._id,
                 name: admin.name,
                 email: admin.email,
-                role: 'primary_admin',
+                role: 'admin',
                 organization: {
                     _id: organization._id,
                     name: organization.name
@@ -704,7 +684,7 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
 
     } catch (error) {
         const processingTime = Date.now() - startTime;
-        logger.error(`[ORG] Primary admin addition failed (${processingTime}ms):`, error);
+        logger.error(`[ORG] Admin addition failed (${processingTime}ms):`, error);
 
         // Handle validation errors
         if (error.name === 'ValidationError') {
@@ -726,7 +706,7 @@ export const addPrimaryAdminToOrganization = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: 'Server error adding primary admin',
+            message: 'Server error adding admin',
             error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
         });
     }

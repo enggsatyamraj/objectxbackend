@@ -3,11 +3,7 @@
 import express from 'express';
 import { protect } from '../middleware/auth.middleware.js';
 import { authorizeRoles } from '../middleware/role.middleware.js';
-import {
-    validateAdminPermissions,
-    requirePrimaryAdmin,
-    canManageResource
-} from '../middleware/adminPermissions.middleware.js';
+import { requireAdmin } from '../middleware/adminPermissions.middleware.js';
 import User from '../models/user.model.js';
 import Organization from '../models/organization.model.js';
 import logger from '../utils/logger.js';
@@ -17,14 +13,6 @@ import {
     enrollStudent,
     enrollTeacher
 } from '../controllers/enroll.admin.controller.js';
-
-// Import admin management controllers
-import {
-    createSecondaryAdmin,
-    listOrganizationAdmins,
-    updateAdminPermissions,
-    removeAdmin
-} from '../controllers/adminManagement.controller.js';
 
 // Import class and section management controllers
 import {
@@ -46,64 +34,51 @@ const adminRouter = express.Router();
 // Apply auth middleware to all admin routes
 adminRouter.use(protect);
 adminRouter.use(authorizeRoles(['admin']));
+adminRouter.use(requireAdmin); // SIMPLIFIED: Just check if admin of organization
 
 // ==================== CLASS AND SECTION MANAGEMENT ====================
 
 // Create class
-adminRouter.post('/create-class', canManageResource('class'), createClass);
+adminRouter.post('/create-class', createClass);
 
 // List all classes in organization
-adminRouter.get('/list-classes', canManageResource('class'), listClasses);
+adminRouter.get('/list-classes', listClasses);
 
 // Create section for a class
-adminRouter.post('/create-section', canManageResource('section'), createSection);
+adminRouter.post('/create-section', createSection);
 
 // List sections for a specific class
-adminRouter.get('/list-sections/:classId', canManageResource('section'), listSectionsByClass);
+adminRouter.get('/list-sections/:classId', listSectionsByClass);
 
 // ==================== STUDENT AND TEACHER ONBOARDING ====================
 
 // Student enrollment/onboarding
-adminRouter.post('/enroll-student', canManageResource('student'), enrollStudent);
+adminRouter.post('/enroll-student', enrollStudent);
 
 // Teacher enrollment/onboarding  
-adminRouter.post('/enroll-teacher', canManageResource('teacher'), enrollTeacher);
-
-// ==================== ADMIN MANAGEMENT ROUTES ====================
-
-// Secondary admin creation (Primary admin only)
-adminRouter.post('/create-secondary-admin', requirePrimaryAdmin, createSecondaryAdmin);
-
-// List organization admins
-adminRouter.get('/list-admins', validateAdminPermissions(['canViewAnalytics']), listOrganizationAdmins);
-
-// Update admin permissions (Primary admin only)
-adminRouter.put('/update-admin-permissions/:adminId', requirePrimaryAdmin, updateAdminPermissions);
-
-// Remove admin (Primary admin only)
-adminRouter.delete('/remove-admin/:adminId', requirePrimaryAdmin, removeAdmin);
+adminRouter.post('/enroll-teacher', enrollTeacher);
 
 // ==================== SECTION MANAGEMENT ROUTES ====================
 
-// Assign teacher to section (Primary admin only)
-adminRouter.post('/assign-teacher-to-section', requirePrimaryAdmin, assignTeacherToSection);
+// Assign teacher to section
+adminRouter.post('/assign-teacher-to-section', assignTeacherToSection);
 
-// Remove teacher from section (Primary admin only)
-adminRouter.delete('/remove-teacher-from-section/:sectionId', requirePrimaryAdmin, removeTeacherFromSection);
+// Remove teacher from section
+adminRouter.delete('/remove-teacher-from-section/:sectionId', removeTeacherFromSection);
 
 // Move student between sections
-adminRouter.put('/move-student-to-section', canManageResource('student'), moveStudentToSection);
+adminRouter.put('/move-student-to-section', moveStudentToSection);
 
 // Get all sections for a class
-adminRouter.get('/class-sections/:classId', canManageResource('class'), getClassSections);
+adminRouter.get('/class-sections/:classId', getClassSections);
 
 // Get sections assigned to a teacher
-adminRouter.get('/teacher-sections/:teacherId', validateAdminPermissions(['canViewAnalytics']), getTeacherSections);
+adminRouter.get('/teacher-sections/:teacherId', getTeacherSections);
 
 // ==================== ADDITIONAL ADMIN ENDPOINTS ====================
 
 // Get organization dashboard stats
-adminRouter.get('/dashboard-stats', validateAdminPermissions(['canViewAnalytics']), async (req, res) => {
+adminRouter.get('/dashboard-stats', async (req, res) => {
     try {
         const admin = await User.findById(req.user._id).populate('organization');
         if (!admin.organization) {
@@ -136,7 +111,7 @@ adminRouter.get('/dashboard-stats', validateAdminPermissions(['canViewAnalytics'
 });
 
 // Get organization overview
-adminRouter.get('/organization-overview', validateAdminPermissions(['canViewAnalytics']), async (req, res) => {
+adminRouter.get('/organization-overview', async (req, res) => {
     try {
         const admin = await User.findById(req.user._id).populate('organization');
         if (!admin.organization) {

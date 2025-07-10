@@ -1,4 +1,4 @@
-// File: controllers/admin.controller.js
+// File: controllers/enroll.admin.controller.js
 
 import bcrypt from 'bcryptjs';
 import User from '../models/user.model.js';
@@ -9,7 +9,6 @@ import logger from '../utils/logger.js';
 import { generateSimplePassword, generateStrongPassword } from '../utils/generatePassword.js';
 import { sendEmail } from '../utils/emailService.js';
 import { findAvailableSection } from '../utils/sectionHelper.js';
-
 
 // POST /admin/enroll-student
 export const enrollStudent = async (req, res) => {
@@ -46,18 +45,18 @@ export const enrollStudent = async (req, res) => {
             });
         }
 
-        // Check if admin has permission to enroll students
+        // SIMPLIFIED: Check if admin belongs to organization (no permission checks)
         const organization = await Organization.findById(admin.organization._id);
-        const adminRecord = organization.admins.find(a => a.user.toString() === admin._id.toString());
+        const isAdminOfOrg = organization.isAdmin(admin._id);
 
-        if (!adminRecord || !adminRecord.permissions.canEnrollStudents) {
-            logger.warn('[ADMIN] Admin lacks student enrollment permission', {
+        if (!isAdminOfOrg) {
+            logger.warn('[ADMIN] Admin not found in organization', {
                 adminId: admin._id,
                 organizationId: organization._id
             });
             return res.status(403).json({
                 success: false,
-                message: 'You do not have permission to enroll students'
+                message: 'You are not an admin of this organization'
             });
         }
 
@@ -258,18 +257,18 @@ export const enrollTeacher = async (req, res) => {
             });
         }
 
-        // Check if admin has permission to enroll teachers
+        // SIMPLIFIED: Check if admin belongs to organization (no permission checks)
         const organization = await Organization.findById(admin.organization._id);
-        const adminRecord = organization.admins.find(a => a.user.toString() === admin._id.toString());
+        const isAdminOfOrg = organization.isAdmin(admin._id);
 
-        if (!adminRecord || !adminRecord.permissions.canEnrollTeachers) {
-            logger.warn('[ADMIN] Admin lacks teacher enrollment permission', {
+        if (!isAdminOfOrg) {
+            logger.warn('[ADMIN] Admin not found in organization', {
                 adminId: admin._id,
                 organizationId: organization._id
             });
             return res.status(403).json({
                 success: false,
-                message: 'You do not have permission to enroll teachers'
+                message: 'You are not an admin of this organization'
             });
         }
 

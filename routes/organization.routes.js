@@ -9,7 +9,7 @@ import {
     getOrganizationById,
     updateOrganization,
     deleteOrganization,
-    addPrimaryAdminToOrganization
+    addAdminToOrganization
 } from '../controllers/organization.controller.js';
 
 const organizationRouter = express.Router();
@@ -54,7 +54,7 @@ organizationRouter.delete('/:id',
 // Add primary admin to organization (SuperAdmin only)
 organizationRouter.post('/:id/add-primary-admin',
     authorizeRoles(['superAdmin']),
-    addPrimaryAdminToOrganization
+    addAdminToOrganization
 );
 
 export default organizationRouter;

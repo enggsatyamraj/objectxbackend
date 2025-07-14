@@ -29,6 +29,15 @@ import {
     getTeacherSections
 } from '../controllers/sectionManagement.controller.js';
 
+import {
+    getOrganizationAnalytics,
+    getOrganizationDetails,
+    getOrganizationUsers,
+    updateOrganizationSettings
+} from '../controllers/adminControllers/adminOrganization.controller.js';
+
+
+
 const adminRouter = express.Router();
 
 // Apply auth middleware to all admin routes
@@ -75,10 +84,24 @@ adminRouter.get('/class-sections/:classId', getClassSections);
 // Get sections assigned to a teacher
 adminRouter.get('/teacher-sections/:teacherId', getTeacherSections);
 
+// ==================== ORGANIZATION MANAGEMENT ====================
+
+// Get comprehensive organization details
+adminRouter.get('/organization/details', getOrganizationDetails);
+
+// Get organization analytics and insights
+adminRouter.get('/organization/analytics', getOrganizationAnalytics);
+
+// Get all users in organization with filtering and pagination
+adminRouter.get('/organization/users', getOrganizationUsers);
+
+// Update organization settings (contact info, enrollment settings, etc.)
+adminRouter.put('/organization/settings', updateOrganizationSettings);
+
 // ==================== ADDITIONAL ADMIN ENDPOINTS ====================
 
 // Get organization dashboard stats
-adminRouter.get('/dashboard-stats', async (req, res) => {
+adminRouter.get('/organization/dashboard-stats', async (req, res) => {
     try {
         const admin = await User.findById(req.user._id).populate('organization');
         if (!admin.organization) {
@@ -111,7 +134,7 @@ adminRouter.get('/dashboard-stats', async (req, res) => {
 });
 
 // Get organization overview
-adminRouter.get('/organization-overview', async (req, res) => {
+adminRouter.get('/organization/organization-overview', async (req, res) => {
     try {
         const admin = await User.findById(req.user._id).populate('organization');
         if (!admin.organization) {

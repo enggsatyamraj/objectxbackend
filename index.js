@@ -11,7 +11,9 @@ import Class from './models/class.model.js';
 import Section from './models/section.model.js';
 import Content from './models/content.model.js';
 import APIKey from './models/apikey.model.js';
+import Course from './models/course.model.js';
 import adminRouter from './routes/admin.routes.js';
+import courseRouter from './routes/course.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -49,6 +51,7 @@ const connectDB = async () => {
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/organizations', organizationRouter);
 app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/superadmin/courses', courseRouter);
 
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the ObjectX API' });

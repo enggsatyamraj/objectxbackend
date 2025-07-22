@@ -32,7 +32,7 @@ courseRouter.get('/', getAllCourses);
 // GET /superadmin/courses/:id - Get course details by ID
 courseRouter.get('/:id', getCourseById);
 
-// PUT /superadmin/courses/:id - Update course
+// PUT /superadmin/courses/:id - Update/Edit course
 courseRouter.put('/:id', updateCourse);
 
 // DELETE /superadmin/courses/:id - Delete course (soft delete)

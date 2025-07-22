@@ -44,11 +44,6 @@ const courseSchema = new mongoose.Schema(
         // Nested Topics with Activities
         topics: [
             {
-                topicNumber: {
-                    type: String,
-                    required: [true, 'Topic number is required'],
-                    trim: true,
-                },
                 title: {
                     type: String,
                     required: [true, 'Topic title is required'],
@@ -56,11 +51,6 @@ const courseSchema = new mongoose.Schema(
                 },
                 activities: [
                     {
-                        activityNumber: {
-                            type: String,
-                            required: [true, 'Activity number is required'],
-                            trim: true,
-                        },
                         title: {
                             type: String,
                             required: [true, 'Activity title is required'],
@@ -196,9 +186,22 @@ courseSchema.virtual('hasActiveActivities').get(function () {
     );
 });
 
-// Pre-save middleware to update stats
+// Pre-save middleware to auto-generate topic numbers and activity numbers
 courseSchema.pre('save', function (next) {
-    if (this.isModified('topics')) {
+    // Auto-generate topic numbers and activity numbers based on chapter
+    if (this.isModified('topics') || this.isNew) {
+        this.topics.forEach((topic, topicIndex) => {
+            // Generate topic number: Chapter.TopicIndex (e.g., 1.1, 1.2, 1.3)
+            topic.topicNumber = `${this.chapterNumber}.${topicIndex + 1}`;
+
+            // Generate activity numbers for each topic
+            topic.activities.forEach((activity, activityIndex) => {
+                // Generate activity number: Chapter.Topic.Activity (e.g., 1.1.1, 1.1.2)
+                activity.activityNumber = `${this.chapterNumber}.${topicIndex + 1}.${activityIndex + 1}`;
+            });
+        });
+
+        // Update stats
         let totalActivities = 0;
         let totalDuration = 0;
 
@@ -217,26 +220,29 @@ courseSchema.pre('save', function (next) {
     next();
 });
 
-// Method to add topic to course
+// Method to add topic to course (auto-generates topic number)
 courseSchema.methods.addTopic = function (topicData) {
-    this.topics.push(topicData);
+    // Remove topicNumber from input data as it will be auto-generated
+    const { topicNumber, ...cleanTopicData } = topicData;
+    this.topics.push(cleanTopicData);
     return this.save();
 };
 
-// Method to add activity to a specific topic
-courseSchema.methods.addActivityToTopic = function (topicNumber, activityData) {
-    const topic = this.topics.find(t => t.topicNumber === topicNumber);
-    if (!topic) {
-        throw new Error('Topic not found');
+// Method to add activity to a specific topic (auto-generates activity number)
+courseSchema.methods.addActivityToTopic = function (topicIndex, activityData) {
+    if (topicIndex >= this.topics.length) {
+        throw new Error('Topic index out of range');
     }
-    topic.activities.push(activityData);
+
+    // Remove activityNumber from input data as it will be auto-generated
+    const { activityNumber, ...cleanActivityData } = activityData;
+    this.topics[topicIndex].activities.push(cleanActivityData);
     return this.save();
 };
 
-// Method to get activities by topic
-courseSchema.methods.getActivitiesByTopic = function (topicNumber) {
-    const topic = this.topics.find(t => t.topicNumber === topicNumber);
-    return topic ? topic.activities : [];
+// Method to get activities by topic index
+courseSchema.methods.getActivitiesByTopicIndex = function (topicIndex) {
+    return topicIndex < this.topics.length ? this.topics[topicIndex].activities : [];
 };
 
 // Method to check if user can access this course

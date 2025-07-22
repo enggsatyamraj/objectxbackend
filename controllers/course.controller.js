@@ -62,21 +62,21 @@ export const createCourse = async (req, res) => {
             });
         }
 
-        // Validate each topic
+        // Validate each topic (no need to validate topicNumber as it's auto-generated)
         for (const topic of topics) {
-            if (!topic.topicNumber || !topic.title || !topic.activities || !Array.isArray(topic.activities)) {
+            if (!topic.title || !topic.activities || !Array.isArray(topic.activities)) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Each topic must have topicNumber, title, and activities array'
+                    message: 'Each topic must have title and activities array'
                 });
             }
 
-            // Validate each activity
+            // Validate each activity (no need to validate activityNumber as it's auto-generated)
             for (const activity of topic.activities) {
-                if (!activity.activityNumber || !activity.title || !activity.description || !activity.videos || !activity.duration) {
+                if (!activity.title || !activity.description || !activity.videos || !activity.duration) {
                     return res.status(400).json({
                         success: false,
-                        message: 'Each activity must have activityNumber, title, description, videos, and duration'
+                        message: 'Each activity must have title, description, videos, and duration'
                     });
                 }
 
@@ -216,23 +216,26 @@ export const getAllCourses = async (req, res) => {
 
         let responseData;
 
-        // If organize=true and no specific filters, organize by grade and subject
+        // If organize=true and no specific filters, organize by grade and subject as key-value object
         if (organize === 'true' && !gradeLevel && !subject && !search) {
-            // Organize courses by grade level and subject
+            // Organize courses as key-value object: Grade -> Subject -> Courses
             const organizedCourses = {};
 
             courses.forEach(course => {
                 const grade = `Grade ${course.gradeLevel}`;
                 const subject = course.subject;
 
+                // Initialize grade if doesn't exist
                 if (!organizedCourses[grade]) {
                     organizedCourses[grade] = {};
                 }
 
+                // Initialize subject array if doesn't exist
                 if (!organizedCourses[grade][subject]) {
                     organizedCourses[grade][subject] = [];
                 }
 
+                // Add course to the appropriate grade and subject
                 organizedCourses[grade][subject].push({
                     _id: course._id,
                     title: course.title,
@@ -252,37 +255,20 @@ export const getAllCourses = async (req, res) => {
                 });
             });
 
-            // Convert organized data to array format for easier frontend handling
-            const organizedArray = [];
-            Object.keys(organizedCourses).sort((a, b) => {
-                const gradeA = parseInt(a.replace('Grade ', ''));
-                const gradeB = parseInt(b.replace('Grade ', ''));
-                return gradeA - gradeB;
-            }).forEach(grade => {
-                const gradeData = {
-                    grade: grade,
-                    gradeLevel: parseInt(grade.replace('Grade ', '')),
-                    subjects: []
-                };
-
-                Object.keys(organizedCourses[grade]).sort().forEach(subject => {
-                    gradeData.subjects.push({
-                        subject: subject,
-                        courseCount: organizedCourses[grade][subject].length,
-                        courses: organizedCourses[grade][subject].sort((a, b) => a.chapterNumber - b.chapterNumber)
-                    });
+            // Sort courses within each subject by chapter number
+            Object.keys(organizedCourses).forEach(grade => {
+                Object.keys(organizedCourses[grade]).forEach(subject => {
+                    organizedCourses[grade][subject].sort((a, b) => a.chapterNumber - b.chapterNumber);
                 });
-
-                organizedArray.push(gradeData);
             });
 
             responseData = {
                 success: true,
                 organized: true,
                 totalCourses: courses.length,
-                totalGrades: organizedArray.length,
+                totalGrades: Object.keys(organizedCourses).length,
                 totalSubjects: [...new Set(courses.map(c => c.subject))].length,
-                data: organizedArray,
+                data: organizedCourses, // Key-value object instead of array
                 availableFilters: {
                     grades: [...new Set(courses.map(c => c.gradeLevel))].sort((a, b) => a - b),
                     subjects: [...new Set(courses.map(c => c.subject))].sort(),
@@ -452,45 +438,125 @@ export const updateCourse = async (req, res) => {
         const updateData = req.body;
 
         // Find course
-        const course = await Course.findById(courseId);
-        if (!course || course.isDeleted) {
+        const existingCourse = await Course.findById(courseId);
+        if (!existingCourse || existingCourse.isDeleted) {
             return res.status(404).json({
                 success: false,
                 message: 'Course not found'
             });
         }
 
-        // Check for conflicts if updating key fields
+        // Check for conflicts if updating key fields (grade, subject, chapter, curriculum)
         if (updateData.gradeLevel || updateData.subject || updateData.chapterNumber || updateData.curriculum) {
-            const conflictCourse = await Course.findOne({
+            const conflictQuery = {
                 _id: { $ne: courseId },
-                gradeLevel: updateData.gradeLevel || course.gradeLevel,
-                subject: updateData.subject || course.subject,
-                chapterNumber: updateData.chapterNumber || course.chapterNumber,
-                curriculum: updateData.curriculum || course.curriculum,
+                gradeLevel: updateData.gradeLevel || existingCourse.gradeLevel,
+                subject: updateData.subject || existingCourse.subject,
+                chapterNumber: updateData.chapterNumber || existingCourse.chapterNumber,
+                curriculum: updateData.curriculum || existingCourse.curriculum,
                 isDeleted: false
-            });
+            };
 
+            const conflictCourse = await Course.findOne(conflictQuery);
             if (conflictCourse) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Another course with this grade, subject, and chapter already exists'
+                    message: `Another course already exists: Grade ${conflictQuery.gradeLevel} ${conflictQuery.subject} Chapter ${conflictQuery.chapterNumber} (${conflictQuery.curriculum})`
                 });
             }
         }
 
-        // Update course
-        updateData.lastUpdatedBy = req.user._id;
+        // Validate topics structure if topics are being updated
+        if (updateData.topics) {
+            if (!Array.isArray(updateData.topics) || updateData.topics.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Topics must be a non-empty array'
+                });
+            }
+
+            // Validate each topic (no need to validate topicNumber as it's auto-generated)
+            for (let topicIndex = 0; topicIndex < updateData.topics.length; topicIndex++) {
+                const topic = updateData.topics[topicIndex];
+
+                if (!topic.title || !topic.activities || !Array.isArray(topic.activities)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Topic ${topicIndex + 1} must have title and activities array`
+                    });
+                }
+
+                // Validate each activity (no need to validate activityNumber as it's auto-generated)
+                for (let activityIndex = 0; activityIndex < topic.activities.length; activityIndex++) {
+                    const activity = topic.activities[activityIndex];
+
+                    if (!activity.title || !activity.description || !activity.videos || !activity.duration) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Activity ${activityIndex + 1} in Topic ${topicIndex + 1} must have title, description, videos, and duration`
+                        });
+                    }
+
+                    // Validate video links
+                    const { vrLink, mobileLink, demoLink } = activity.videos;
+                    if (!vrLink || !mobileLink || !demoLink) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Activity ${activityIndex + 1} in Topic ${topicIndex + 1} must have VR, Mobile, and Demo video links`
+                        });
+                    }
+
+                    // Validate URLs
+                    const urlPattern = /^https?:\/\/.+/;
+                    if (!urlPattern.test(vrLink) || !urlPattern.test(mobileLink) || !urlPattern.test(demoLink)) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Activity ${activityIndex + 1} in Topic ${topicIndex + 1} has invalid video URLs`
+                        });
+                    }
+
+                    // Validate duration
+                    if (typeof activity.duration !== 'number' || activity.duration < 1 || activity.duration > 120) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Activity ${activityIndex + 1} in Topic ${topicIndex + 1} duration must be between 1 and 120 minutes`
+                        });
+                    }
+                }
+            }
+        }
+
+        // Prepare update object
+        const updateFields = {};
+
+        // Update basic course info
+        if (updateData.title) updateFields.title = updateData.title.trim();
+        if (updateData.subject) updateFields.subject = updateData.subject;
+        if (updateData.gradeLevel) updateFields.gradeLevel = parseInt(updateData.gradeLevel);
+        if (updateData.chapterNumber) updateFields.chapterNumber = parseInt(updateData.chapterNumber);
+        if (updateData.curriculum) updateFields.curriculum = updateData.curriculum;
+        if (updateData.description) updateFields.description = updateData.description.trim();
+        if (updateData.topics) updateFields.topics = updateData.topics;
+        if (typeof updateData.isActive === 'boolean') updateFields.isActive = updateData.isActive;
+
+        // Always update lastUpdatedBy
+        updateFields.lastUpdatedBy = req.user._id;
+
+        // Update course (pre-save middleware will auto-generate topic/activity numbers)
         const updatedCourse = await Course.findByIdAndUpdate(
             courseId,
-            updateData,
-            { new: true, runValidators: true }
+            updateFields,
+            {
+                new: true,
+                runValidators: true
+            }
         ).populate('createdBy lastUpdatedBy', 'name email');
 
         const processingTime = Date.now() - startTime;
         logger.info(`[COURSE] Course updated successfully (${processingTime}ms)`, {
             superAdminId: req.user._id,
-            courseId
+            courseId,
+            fieldsUpdated: Object.keys(updateFields)
         });
 
         return res.status(200).json({
@@ -505,10 +571,15 @@ export const updateCourse = async (req, res) => {
                 curriculum: updatedCourse.curriculum,
                 description: updatedCourse.description,
                 displayName: updatedCourse.displayName,
+                topics: updatedCourse.topics, // Include full topics with auto-generated numbers
                 totalTopics: updatedCourse.stats.totalTopics,
                 totalActivities: updatedCourse.stats.totalActivities,
                 totalDuration: updatedCourse.totalDuration,
+                averageDuration: updatedCourse.stats.averageDuration,
+                isActive: updatedCourse.isActive,
+                createdAt: updatedCourse.createdAt,
                 updatedAt: updatedCourse.updatedAt,
+                createdBy: updatedCourse.createdBy,
                 lastUpdatedBy: updatedCourse.lastUpdatedBy
             }
         });
@@ -517,12 +588,29 @@ export const updateCourse = async (req, res) => {
         const processingTime = Date.now() - startTime;
         logger.error(`[COURSE] Course update failed (${processingTime}ms):`, error);
 
+        // Handle validation errors
         if (error.name === 'ValidationError') {
             const validationErrors = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({
                 success: false,
                 message: 'Validation error',
                 errors: validationErrors
+            });
+        }
+
+        // Handle duplicate key error
+        if (error.code === 11000) {
+            return res.status(400).json({
+                success: false,
+                message: 'A course with this grade, subject, and chapter already exists'
+            });
+        }
+
+        // Handle cast errors (invalid ObjectId, etc.)
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid course ID format'
             });
         }
 

@@ -4,6 +4,11 @@ import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import authRouter from './routes/auth.routes.js';
 import organizationRouter from './routes/organization.routes.js';
+import adminRouter from './routes/admin.routes.js';
+import courseRouter from './routes/course.routes.js';
+import courseViewingRouter from './routes/courseViewing.routes.js';
+import teacherRouter from './routes/teacher.routes.js';
+import studentRouter from './routes/student.routes.js';
 import cors from 'cors'
 import User from './models/user.model.js';
 import Organization from './models/organization.model.js';
@@ -12,8 +17,6 @@ import Section from './models/section.model.js';
 import Content from './models/content.model.js';
 import APIKey from './models/apikey.model.js';
 import Course from './models/course.model.js';
-import adminRouter from './routes/admin.routes.js';
-import courseRouter from './routes/course.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -51,7 +54,10 @@ const connectDB = async () => {
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/organizations', organizationRouter);
 app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/teacher', teacherRouter);
+app.use('/api/v1/student', studentRouter);
 app.use('/api/v1/superadmin/courses', courseRouter);
+app.use('/api/v1/courses', courseViewingRouter);
 
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the ObjectX API' });
@@ -104,5 +110,3 @@ const bootstrap = async () => {
 
 // Start the application
 bootstrap();
-
-// https://claude.ai/chat/34273b02-152c-4c09-a22f-ef39435a145b

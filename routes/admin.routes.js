@@ -36,7 +36,11 @@ import {
     updateOrganizationSettings
 } from '../controllers/adminControllers/adminOrganization.controller.js';
 
-
+// Import course viewing controllers for admin
+import {
+    getOrganizationCourses,
+    getOrganizationCourseDetails
+} from '../controllers/courseViewing.controller.js';
 
 const adminRouter = express.Router();
 
@@ -97,6 +101,14 @@ adminRouter.get('/organization/users', getOrganizationUsers);
 
 // Update organization settings (contact info, enrollment settings, etc.)
 adminRouter.put('/organization/settings', updateOrganizationSettings);
+
+// ==================== COURSE VIEWING FOR ADMINS ====================
+
+// Get courses available for organization's classes
+adminRouter.get('/courses', getOrganizationCourses);
+
+// Get detailed course for organization
+adminRouter.get('/courses/:courseId', getOrganizationCourseDetails);
 
 // ==================== ADDITIONAL ADMIN ENDPOINTS ====================
 

@@ -1,14 +1,21 @@
-// File: routes/student.routes.js
+// File: routes/student.routes.js (Updated)
 
 import express from 'express';
 import { protect } from '../middleware/auth.middleware.js';
 import { authorizeRoles } from '../middleware/role.middleware.js';
-import {
-    getStudentCourses,
-    getStudentCourseDetails
-} from '../controllers/courseViewing.controller.js';
+
+// Import existing student controllers
 import User from '../models/user.model.js';
 import logger from '../utils/logger.js';
+
+// Import new student course controllers
+import {
+    getStudentCourses,
+    getStudentCourseDetails,
+    getAvailableSubjects,
+    searchStudentCourses,
+    getStudentCourseSummary
+} from '../controllers/student.course.controller.js';
 
 const studentRouter = express.Router();
 
@@ -16,15 +23,26 @@ const studentRouter = express.Router();
 studentRouter.use(protect);
 studentRouter.use(authorizeRoles(['student']));
 
-// ==================== STUDENT COURSE ROUTES ====================
+// ==================== STUDENT COURSE ACCESS ROUTES ====================
 
-// Get courses available for student's grade
+// IMPORTANT: Order matters! Specific routes must come BEFORE parameterized routes
+
+// Get available subjects for student's grade (MUST be before /:courseId)
+studentRouter.get('/courses/subjects', getAvailableSubjects);
+
+// Advanced course search (MUST be before /:courseId)
+studentRouter.get('/courses/search', searchStudentCourses);
+
+// Get course summary for dashboard
+studentRouter.get('/dashboard/course-summary', getStudentCourseSummary);
+
+// Get all courses available for student's grade
 studentRouter.get('/courses', getStudentCourses);
 
-// Get detailed course for student
+// Get detailed course with full topics and activities (MUST be LAST among /courses routes)
 studentRouter.get('/courses/:courseId', getStudentCourseDetails);
 
-// ==================== STUDENT DASHBOARD & INFO ====================
+// ==================== EXISTING STUDENT DASHBOARD & INFO ROUTES ====================
 
 // Get student dashboard information
 studentRouter.get('/dashboard', async (req, res) => {
